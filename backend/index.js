@@ -16,6 +16,7 @@ server.on("request", async (req, res) => {
     }
     console.log(req.url)
 
+    // 收到切片的请求
     if (req.url === '/upload') {
         const multipart = new multiparty.Form();
 
@@ -41,6 +42,92 @@ server.on("request", async (req, res) => {
                     message: "切片上传成功"
                 }));
         });
+    }
+
+
+
+    // 接收请求的参数
+    const resolvePost = req =>
+        new Promise(res => {
+            let chunk = ''
+            req.on('data', data => {
+                chunk += data
+            })
+            req.on('end', () => {
+                res(JSON.parse(chunk))
+            })
+
+        })
+    const pipeStream = (path, writeStream) => {
+        console.log('path', path)
+        return new Promise(resolve => {
+            const readStream = fse.createReadStream(path);
+            readStream.on("end", () => {
+                fse.unlinkSync(path);
+                resolve();
+            });
+            readStream.pipe(writeStream);
+        });
+    }
+
+    // 合并切片
+    const mergeFileChunk = async (filePath, fileName, size) => {
+        // filePath：你将切片合并到哪里，的路径
+        const chunkDir = path.resolve(UPLOAD_DIR, `${fileName}-chunks`);
+        let chunkPaths = null
+        // 获取切片文件夹里所有切片，返回一个数组
+        chunkPaths = await fse.readdir(chunkDir);
+        // 根据切片下标进行排序
+        // 否则直接读取目录的获得的顺序可能会错乱
+        chunkPaths.sort((a, b) => a.split("-")[1] - b.split("-")[1]);
+        const arr = chunkPaths.map((chunkPath, index) => {
+            return pipeStream(
+                path.resolve(chunkDir, chunkPath),
+                // 指定位置创建可写流
+                fse.createWriteStream(filePath, {
+                    start: index * size,
+                    end: (index + 1) * size
+                })
+            )
+        })
+        await Promise.all(arr)
+        fse.rmdirSync(chunkDir); // 合并后删除保存切片的目录
+    };
+
+
+    // 合并切片的请求
+    if (req.url === '/merge') {
+        const data = await resolvePost(req);
+        const { fileName, size } = data;
+        const filePath = path.resolve(UPLOAD_DIR, fileName);
+        await mergeFileChunk(filePath, fileName, size);
+        res.end(
+            JSON.stringify({
+                code: 0,
+                message: "文件合并成功"
+            })
+        );
+    }
+
+    // 秒传功能
+    if (req.url === "/verify") {
+        const data = await resolvePost(req);
+        const { fileName } = data;
+        const filePath = path.resolve(UPLOAD_DIR, fileName);
+        console.log(filePath)
+        if (fse.existsSync(filePath)) {
+            res.end(
+                JSON.stringify({
+                    shouldUpload: false
+                })
+            );
+        } else {
+            res.end(
+                JSON.stringify({
+                    shouldUpload: true
+                })
+            );
+        }
     }
 })
 

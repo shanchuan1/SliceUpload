@@ -1,12 +1,12 @@
 import axios from "axios";
 
-export default axiosRequest = ({
+export default function axiosRequest({
     url,
     method = "post",
     data,
     headers = {},
     onUploadProgress = (e) => e, // 进度回调
-}) => {
+}) {
     return new Promise((resolve, reject) => {
         axios[method](url, data, {
             headers,
