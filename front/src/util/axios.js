@@ -1,6 +1,9 @@
 import axios from "axios";
 
-export default function axiosRequest({
+const CancelToken = axios.CancelToken;
+const source = CancelToken.source();
+
+ function axiosRequest({
     url,
     method = "post",
     data,
@@ -11,6 +14,7 @@ export default function axiosRequest({
         axios[method](url, data, {
             headers,
             onUploadProgress, // 传入监听进度回调
+            cancelToken: source.token
         })
             .then((res) => {
                 resolve(res);
@@ -19,4 +23,13 @@ export default function axiosRequest({
                 reject(err);
             });
     });
+}
+
+ function pauseUpload() {
+    source.cancel("中断上传!");
+    source = CancelToken.source(); // 重置source，确保能续传
+}
+export {
+    axiosRequest,
+    pauseUpload
 }

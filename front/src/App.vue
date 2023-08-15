@@ -2,6 +2,8 @@
   <div>
        <input type="file" @change="handleFileChange" />
        <el-button @click="handleUpload">upload</el-button>
+      <el-button @click="pauseUpload"> 暂停 </el-button>
+      <el-button @click="keepUpload"> 续传 </el-button>
   </div>
   <div style="width: 300px">
     总进度：
@@ -11,16 +13,19 @@
       <span>{{ item.chunkName }}：</span>
       <el-progress :percentage="item.percent"></el-progress>
     </div>
+    <!-- 总进度：
+    <el-progress :percentage="tempPercent"></el-progress> -->
   </div>
 </template>
  ​
 <script>
-import { reactive, computed } from 'vue';
-import axiosRequest from './util/axios'
+import { reactive, computed, watch  } from 'vue';
+import { axiosRequest, pauseUpload } from './util/axios'
 export default {
   setup() {
     const fileObj = reactive({
-      file: null
+      file: null,
+      chunkList: []
     })
 
     // 选择文件
@@ -33,8 +38,9 @@ export default {
     }
     // 提交上传
     const handleUpload = async () => {
-      // const fileObj = fileObj
       if (!fileObj.file) return
+
+      // 先发请求判断后端有没这个文件
       const { shouldUpload } = await verifyUpload(
         fileObj.file.name,
       );
@@ -48,10 +54,13 @@ export default {
       fileObj.chunkList = chunkList.map(({ file }, index) => ({
         file,
         size: file.size,
+        percent: 0,
         chunkName: `${fileObj.file.name}-${index}`,
         fileName: fileObj.file.name,
         index,
       }));
+      console.log(fileObj)
+      console.log(fileObj.chunkList)
       uploadChunks(); // 执行上传切片的操作
     }
     // 判断是否秒传
@@ -88,16 +97,17 @@ export default {
           formData.append("file", file);
           formData.append("fileName", fileName);
           formData.append("chunkName", chunkName);
+          console.log('formData', formData)
           return { formData, index };
         })
-        .map(({ formData, index }) =>
-          axiosRequest({
-            url: "http://localhost:3000/upload",
-            data: formData,
-            onUploadProgress: createProgressHandler(
-              fileObj.chunkList[index]
-            ), // 传入监听上传进度回调
-          })
+        .map(({ formData, index }) => axiosRequest({
+          url: "http://localhost:3000/upload",
+          data: formData,
+          onUploadProgress: createProgressHandler(
+            fileObj.chunkList[index]
+          ), // 传入监听上传进度回调
+        })
+
         );
       await Promise.all(requestList); // 使用Promise.all进行请求
 
@@ -110,6 +120,7 @@ export default {
       };
     }
 
+    // 计算切片进度
     const totalPercent = computed(() => {
       // const fileObj = this.fileObj;
       if (fileObj.chunkList?.length === 0) return 0;
@@ -119,7 +130,7 @@ export default {
       return parseInt((loaded / fileObj.file?.size).toFixed(2));
     })
 
-    // 合并切片
+    // 向后端发送合并切片的请求
     const mergeChunks = (size = 5 * 1024 * 1024) => {
       axiosRequest({
         url: "http://localhost:3000/merge",
@@ -133,10 +144,24 @@ export default {
       });
     }
 
+    // 续传
+    const keepUpload = async () => {
+      const { uploadedList } = await verifyUpload(
+        fileObj.file.name
+      );
+      uploadChunks(uploadedList);
+    }
+
+    // watch(totalPercent, (newValue, oldValue) => {
+    //   if (newValue > oldValue) totalPercent = newValue
+    // })
+
     return {
       handleFileChange,
       handleUpload,
-      totalPercent
+      totalPercent,
+      keepUpload,
+      fileObj
     };
   },
 };

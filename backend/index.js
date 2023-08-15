@@ -111,6 +111,11 @@ server.on("request", async (req, res) => {
 
     // 秒传功能
     if (req.url === "/verify") {
+        // 返回已经上传切片名列表
+        const createUploadedList = async fileName =>
+            fse.existsSync(path.resolve(UPLOAD_DIR, fileName))
+                ? await fse.readdir(path.resolve(UPLOAD_DIR, fileName))
+                : [];
         const data = await resolvePost(req);
         const { fileName } = data;
         const filePath = path.resolve(UPLOAD_DIR, fileName);
@@ -124,7 +129,8 @@ server.on("request", async (req, res) => {
         } else {
             res.end(
                 JSON.stringify({
-                    shouldUpload: true
+                    shouldUpload: true,
+                    uploadedList: await createUploadedList(`${fileName}-chunks`)
                 })
             );
         }
